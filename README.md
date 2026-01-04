@@ -55,7 +55,7 @@ On first use the node can automatically download weights from the repository.
 - Weights selection is a dropdown only.
 
 If you want to download manually:
-1. Download the weights from `[<HF REPO>](https://huggingface.co/SnJake/Baikal-Swin-Anime)`.
+1. Download the weights from `[HF REPO](https://huggingface.co/SnJake/Baikal-Swin-Anime)`.
 2. Place the file(s) into `ComfyUI/models/anime_upscale/`.
 
 ## Step 3: Restart
