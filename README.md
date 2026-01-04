@@ -59,7 +59,7 @@ If you want to download manually:
 
 ## Step 3: Restart
 
-Restart ComfyUI completely. The node will appear under **`SnJake/Upscale`**.
+Restart ComfyUI completely. The node will appear under **`😎 SnJake/Upscale`**.
 
 ---
 
