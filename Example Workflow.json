@@ -1,53 +1,9 @@
 {
   "id": "34f701d0-18bb-43e9-bb4e-c9dd71af1703",
   "revision": 0,
-  "last_node_id": 8,
-  "last_link_id": 9,
+  "last_node_id": 11,
+  "last_link_id": 14,
   "nodes": [
-    {
-      "id": 1,
-      "type": "SnJakeAnimeUpscaleCheckpointLoader",
-      "pos": [
-        428.69098787329483,
-        -1125.6175104820109
-      ],
-      "size": [
-        339.9802365815017,
-        150
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "upscale_model_custom",
-          "type": "ANIME_UPSCALE_MODEL",
-          "links": [
-            1
-          ]
-        },
-        {
-          "name": "upscale_model",
-          "type": "UPSCALE_MODEL",
-          "links": []
-        }
-      ],
-      "properties": {
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {},
-          "version": "7.5.1"
-        },
-        "Node name for S&R": "SnJakeAnimeUpscaleCheckpointLoader"
-      },
-      "widgets_values": [
-        "Baikal_Swin_Anime_x2.safetensors",
-        "G:\\Programs\\Git\\ComfyUI_windows_portable\\ComfyUI\\models\\anime_upscale\\weights_epoch_0010.pt"
-      ],
-      "color": "#1b5a46",
-      "bgcolor": "#0d2a21"
-    },
     {
       "id": 3,
       "type": "LoadImage",
@@ -60,7 +16,7 @@
         314
       ],
       "flags": {},
-      "order": 1,
+      "order": 0,
       "mode": 0,
       "inputs": [],
       "outputs": [
@@ -68,7 +24,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            2
+            12
           ]
         },
         {
@@ -78,70 +34,19 @@
         }
       ],
       "properties": {
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        },
         "cnr_id": "comfy-core",
         "ver": "0.6.0",
-        "Node name for S&R": "LoadImage"
+        "Node name for S&R": "LoadImage",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
       },
       "widgets_values": [
         "4 Before (1).png",
         "image"
       ]
-    },
-    {
-      "id": 2,
-      "type": "SnJakeAnimeUpscaleInference",
-      "pos": [
-        931.8860713687739,
-        -864.3565459984311
-      ],
-      "size": [
-        391.9945632551694,
-        155.87338170217618
-      ],
-      "flags": {},
-      "order": 2,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "upscale_model_custom",
-          "type": "ANIME_UPSCALE_MODEL",
-          "link": 1
-        },
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 2
-        }
-      ],
-      "outputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "links": [
-            3
-          ]
-        }
-      ],
-      "properties": {
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {},
-          "version": "7.5.1"
-        },
-        "Node name for S&R": "SnJakeAnimeUpscaleInference"
-      },
-      "widgets_values": [
-        256,
-        32,
-        "bf16",
-        "cuda"
-      ],
-      "color": "#1b5a46",
-      "bgcolor": "#0d2a21"
     },
     {
       "id": 4,
@@ -161,46 +66,141 @@
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 3
+          "link": 13
         }
       ],
       "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.6.0",
+        "Node name for S&R": "PreviewImage",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 11,
+      "type": "SnJakeAnimeUpscaleCheckpointLoader",
+      "pos": [
+        479.3890849187575,
+        -998.8774237961564
+      ],
+      "size": [
+        272.9244140625,
+        102
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "upscale_model_custom",
+          "type": "ANIME_UPSCALE_MODEL",
+          "links": [
+            14
+          ]
+        },
+        {
+          "name": "upscale_model",
+          "type": "UPSCALE_MODEL",
+          "links": null
+        }
+      ],
       "properties": {
         "ue_properties": {
           "widget_ue_connectable": {},
           "input_ue_unconnectable": {}
         },
-        "cnr_id": "comfy-core",
-        "ver": "0.6.0",
-        "Node name for S&R": "PreviewImage"
+        "Node name for S&R": "SnJakeAnimeUpscaleCheckpointLoader"
       },
-      "widgets_values": []
+      "widgets_values": [
+        "Baikal_Swin_Anime_x2.safetensors",
+        false
+      ],
+      "color": "#2e2e36",
+      "bgcolor": "#41414a"
+    },
+    {
+      "id": 10,
+      "type": "SnJakeAnimeUpscaleInference",
+      "pos": [
+        898.5109441201698,
+        -863.5425185045628
+      ],
+      "size": [
+        272.009765625,
+        150
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "upscale_model_custom",
+          "type": "ANIME_UPSCALE_MODEL",
+          "link": 14
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 12
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "properties": {
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "Node name for S&R": "SnJakeAnimeUpscaleInference"
+      },
+      "widgets_values": [
+        256,
+        32,
+        "auto",
+        "auto"
+      ],
+      "color": "#2e2e36",
+      "bgcolor": "#41414a"
     }
   ],
   "links": [
     [
-      1,
-      1,
-      0,
-      2,
-      0,
-      "ANIME_UPSCALE_MODEL"
-    ],
-    [
-      2,
+      12,
       3,
       0,
-      2,
+      10,
       1,
       "IMAGE"
     ],
     [
-      3,
-      2,
+      13,
+      10,
       0,
       4,
       0,
       "IMAGE"
+    ],
+    [
+      14,
+      11,
+      0,
+      10,
+      0,
+      "ANIME_UPSCALE_MODEL"
     ]
   ],
   "groups": [],
@@ -210,10 +210,10 @@
     "ue_links": [],
     "links_added_by_ue": [],
     "ds": {
-      "scale": 0.6934334949441415,
+      "scale": 1.2284597357367388,
       "offset": [
-        564.3835123418378,
-        2009.3831952820412
+        166.94874521274247,
+        1574.3948619611058
       ]
     },
     "frontendVersion": "1.35.9",
