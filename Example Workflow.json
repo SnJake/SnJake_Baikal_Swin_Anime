@@ -1,8 +1,8 @@
 {
   "id": "34f701d0-18bb-43e9-bb4e-c9dd71af1703",
   "revision": 0,
-  "last_node_id": 11,
-  "last_link_id": 14,
+  "last_node_id": 12,
+  "last_link_id": 15,
   "nodes": [
     {
       "id": 3,
@@ -83,49 +83,6 @@
       "widgets_values": []
     },
     {
-      "id": 11,
-      "type": "SnJakeAnimeUpscaleCheckpointLoader",
-      "pos": [
-        479.3890849187575,
-        -998.8774237961564
-      ],
-      "size": [
-        272.9244140625,
-        102
-      ],
-      "flags": {},
-      "order": 1,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "upscale_model_custom",
-          "type": "ANIME_UPSCALE_MODEL",
-          "links": [
-            14
-          ]
-        },
-        {
-          "name": "upscale_model",
-          "type": "UPSCALE_MODEL",
-          "links": null
-        }
-      ],
-      "properties": {
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        },
-        "Node name for S&R": "SnJakeAnimeUpscaleCheckpointLoader"
-      },
-      "widgets_values": [
-        "Baikal_Swin_Anime_x2.safetensors",
-        false
-      ],
-      "color": "#2e2e36",
-      "bgcolor": "#41414a"
-    },
-    {
       "id": 10,
       "type": "SnJakeAnimeUpscaleInference",
       "pos": [
@@ -143,7 +100,7 @@
         {
           "name": "upscale_model_custom",
           "type": "ANIME_UPSCALE_MODEL",
-          "link": 14
+          "link": 15
         },
         {
           "name": "image",
@@ -161,17 +118,65 @@
         }
       ],
       "properties": {
+        "aux_id": "SnJake/SnJake_Baikal_Swin_Anime",
+        "ver": "4f5fc4292e1da9890dcc3bfed72f4cbd4103b1a6",
+        "Node name for S&R": "SnJakeAnimeUpscaleInference",
         "ue_properties": {
           "widget_ue_connectable": {},
-          "input_ue_unconnectable": {}
-        },
-        "Node name for S&R": "SnJakeAnimeUpscaleInference"
+          "input_ue_unconnectable": {},
+          "version": "7.5.1"
+        }
       },
       "widgets_values": [
         256,
         32,
         "auto",
         "auto"
+      ],
+      "color": "#2e2e36",
+      "bgcolor": "#41414a"
+    },
+    {
+      "id": 12,
+      "type": "SnJakeAnimeUpscaleCheckpointLoader",
+      "pos": [
+        507.88004720415137,
+        -1018.4140836489977
+      ],
+      "size": [
+        272.9244140625,
+        102
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "upscale_model_custom",
+          "type": "ANIME_UPSCALE_MODEL",
+          "links": [
+            15
+          ]
+        },
+        {
+          "name": "upscale_model",
+          "type": "UPSCALE_MODEL",
+          "links": null
+        }
+      ],
+      "properties": {
+        "aux_id": "SnJake/SnJake_Baikal_Swin_Anime",
+        "ver": "4f5fc4292e1da9890dcc3bfed72f4cbd4103b1a6",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "Node name for S&R": "SnJakeAnimeUpscaleCheckpointLoader"
+      },
+      "widgets_values": [
+        "Baikal_Swin_Anime_x2.safetensors",
+        false
       ],
       "color": "#2e2e36",
       "bgcolor": "#41414a"
@@ -195,8 +200,8 @@
       "IMAGE"
     ],
     [
-      14,
-      11,
+      15,
+      12,
       0,
       10,
       0,
@@ -212,8 +217,8 @@
     "ds": {
       "scale": 1.2284597357367388,
       "offset": [
-        166.94874521274247,
-        1574.3948619611058
+        184.41822780842747,
+        1557.1681809545014
       ]
     },
     "frontendVersion": "1.35.9",
