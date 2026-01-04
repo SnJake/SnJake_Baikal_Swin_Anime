@@ -52,7 +52,6 @@ The installation consists of two steps: installing the node and making the weigh
 On first use the node can automatically download weights from the repository.
 
 - Default weights location: `ComfyUI/models/anime_upscale/`
-- Weights selection is a dropdown only.
 
 If you want to download manually:
 1. Download the weights from [HF REPO](https://huggingface.co/SnJake/Baikal-Swin-Anime).
