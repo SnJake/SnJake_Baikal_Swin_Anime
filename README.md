@@ -87,10 +87,6 @@ The node menu path is **`😎 SnJake/Upscale`**.
 - Dataset: 40,000 images from Danbooru2024: https://huggingface.co/datasets/deepghs/danbooru2024
 - Validation: 600 images
 - Epochs: 70
-- Metrics (without degradation) (val):
-  - PSNR: 39.517540791829425
-  - SSIM: 0.986409981250763
-  - DISTS: 0.013307907978693644
 
 Training code is included in `training_code/` for reference.
 
