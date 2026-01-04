@@ -24,7 +24,7 @@ _EMOJI = "\U0001F60E"
 _CATEGORY = f"{_EMOJI} SnJake/Upscale"
 _VALID_EXTS = (".pt", ".pth", ".ckpt", ".safetensors")
 _CONFIG_PATH = os.path.join(os.path.dirname(__file__), "training_code", "config.yaml")
-_WEIGHTS_BASE_URL = "https://huggingface.co/<USER>/<REPO>/resolve/main"
+_WEIGHTS_BASE_URL = "https://huggingface.co/SnJake/Baikal-Swin-Anime/resolve/main"
 _REMOTE_WEIGHTS = {
     "Baikal_Swin_Anime_x2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2.safetensors",
 }
