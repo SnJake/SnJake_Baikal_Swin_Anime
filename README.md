@@ -4,13 +4,15 @@
 
 SnJake Baikal-Swin-Anime x2 is a custom ComfyUI node for upscaling anime/illustration images with a dedicated restoration model.
 
+<img width="2496" height="3648" alt="Baikal Swin Anime" src="https://github.com/user-attachments/assets/f2d38c1c-c03f-4e9c-afc7-40efa66222b3" />
+
 ---
 
 # Examples
 
-<PLACEHOLDER_IMAGE_1>
-<PLACEHOLDER_IMAGE_2>
-<PLACEHOLDER_IMAGE_3>
+<img width="4096" height="4096" alt="Diff 1" src="https://github.com/user-attachments/assets/7e4b7305-c5f3-47a9-8945-9bd9d7db4ced" />
+<img width="4096" height="2048" alt="Diff 4" src="https://github.com/user-attachments/assets/c7d0427d-4a65-444e-a317-289c8741c3c8" />
+<img width="4096" height="2048" alt="Diff 3" src="https://github.com/user-attachments/assets/6204b5eb-c6fc-4b95-bb80-0c611f9ae5e9" />
 
 ---
 
