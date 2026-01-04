@@ -37,14 +37,14 @@ The installation consists of two steps: installing the node and making the weigh
     1. Make sure your ComfyUI virtual environment (`venv`) is activated.
     2. Navigate into the new node directory and install the requirements:
        ```bash
-       cd SnJake_JPG_Artifacts_Noise_Cleaner
+       cd SnJake_Baikal_Swin_Anime
        pip install -r requirements.txt
        ```
    For Portable ComfyUI installations:
     1. Navigate back to the **root** of your portable ComfyUI directory (e.g., `D:\ComfyUI_windows_portable`).
     2. Run the following command to use the embedded Python to install the requirements. *Do not activate any venv.*
        ```bash
-       python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\SnJake_JPG_Artifacts_Noise_Cleaner\requirements.txt
+       python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\SnJake_Baikal_Swin_Anime\requirements.txt
        ```
 
 ## Step 2: Model Weights
