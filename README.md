@@ -31,7 +31,7 @@ The installation consists of two steps: installing the node and making the weigh
    ```
 3. Clone this repository:
    ```bash
-   git clone <GITHUB_REPO_URL>
+   git clone https://github.com/SnJake/SnJake_Baikal_Swin_Anime.git
    ```
 4. For standard ComfyUI installations (with venv):
     1. Make sure your ComfyUI virtual environment (`venv`) is activated.
