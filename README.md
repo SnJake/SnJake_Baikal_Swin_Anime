@@ -2,7 +2,7 @@
 ![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![Made for ComfyUI](https://img.shields.io/badge/Made%20for-ComfyUI-blueviolet)
 
-SnJake Baikal-Swin-Anime x2 is a custom ComfyUI node for upscaling anime/illustration images with a dedicated restoration model.
+SnJake Baikal-Swin-Anime x2 is a custom ComfyUI node for upscaling anime/illustration images with a dedicated restoration model. Model in **experimental** state.
 
 ---
 
