@@ -1,0 +1,94 @@
+data:
+  train_dir: "G:/Programs/ArtifactsRemoverNN/dataset"
+  scale: 2
+  hr_patch_size: 160
+  batch_size: 12
+  num_workers: 6
+  extensions: ["png", "jpg", "jpeg", "webp"]
+  augment: true
+  degrade:
+    blur_prob: 0.2
+    blur_radius: 1.2
+    noise_prob: 0.2
+    noise_sigma: 2.0
+    jpeg_prob: 0.25
+    jpeg_quality_min: 70
+    jpeg_quality_max: 95
+    resample_methods: ["bicubic", "bilinear", "lanczos"]
+
+
+model:
+  in_channels: 3
+  embed_dim: 96
+  depths: [6, 6, 6, 6]
+  num_heads: [6, 6, 6, 6]
+  window_size: 8
+  mlp_ratio: 4.0
+  qkv_bias: true
+  drop_rate: 0.0
+  attn_drop_rate: 0.0
+  drop_path_rate: 0.1
+
+loss:
+  pixel_type: charbonnier
+  charbonnier_eps: 1.0e-3
+  pixel_weight: 1.0
+  edge_weight: 0.05
+  fft_weight: 0.02
+  perceptual_weight: 0.1
+  perceptual_layers: [8, 17, 26]
+  perceptual_layer_weights: [1.0, 1.0, 1.0]
+  perceptual_pretrained: true
+
+optimizer:
+  lr: 2.0e-4
+  weight_decay: 1.0e-2
+  betas: [0.9, 0.99]
+  eps: 1.0e-8
+
+scheduler:
+  name: cosine
+  warmup_steps: 1000
+  min_lr: 2.0e-6
+
+ema:
+  enabled: true
+  decay: 0.999
+
+train:
+  epochs: 200 # 200 epochs up to and including epoch 45, after epoch 45 reduced to 100 epochs
+  seed: 4
+  amp: bf16
+  grad_clip_norm: 1.0
+  grad_accum_steps: 1
+  log_every: 250
+  save_every_epochs: 1
+  output_dir: "runs/anime_sr_x2"
+  resume: ""
+
+val:
+  val_dir: "G:/Programs/ArtifactsRemoverNN/val"
+  batch_size: 1
+  num_workers: 2
+  every_epochs: 5
+  max_images: 600
+  tile: 256
+  overlap: 32
+  use_dists: true
+  dists_device: "cuda"
+  recreate_dists_each_val: true
+  empty_cache_after: true
+  gc_collect: true
+  pin_memory: false
+  persistent_workers: false
+  hr_patch_size: 0
+  crop_to_scale: true
+  degrade:
+    blur_prob: 0.0
+    blur_radius: 0.0
+    noise_prob: 0.0
+    noise_sigma: 0.0
+    jpeg_prob: 0.0
+    jpeg_quality_min: 95
+    jpeg_quality_max: 95
+    resample_methods: ["bicubic"]
