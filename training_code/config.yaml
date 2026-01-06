@@ -1,23 +1,31 @@
 data:
   train_dir: "G:/Programs/ArtifactsRemoverNN/dataset"
   scale: 2
-  hr_patch_size: 160
+  hr_patch_size: 144 #160 or 192 or 144
   batch_size: 12
   num_workers: 6
+  pin_memory: true
+  prefetch_factor: 2
   extensions: ["png", "jpg", "jpeg", "webp"]
   augment: true
   degrade:
     blur_prob: 0.2
     blur_radius: 1.2
+    resize_prob: 0.6
+    resize_range: [0.6, 1.2]
     noise_prob: 0.2
     noise_sigma: 2.0
-    jpeg_prob: 0.25
+    noise_gray_prob: 0.3
+    jpeg_prob: 0.2
+    jpeg2_prob: 0.1
     jpeg_quality_min: 70
     jpeg_quality_max: 95
-    resample_methods: ["bicubic", "bilinear", "lanczos"]
+    jpeg_subsampling_choices: [0, 1, 2]
+    resample_methods: ["lanczos", "bicubic", "bilinear", "nearest"]
 
 
 model:
+  type: "swin2sr"
   in_channels: 3
   embed_dim: 96
   depths: [6, 6, 6, 6]
@@ -36,13 +44,61 @@ loss:
   edge_weight: 0.05
   fft_weight: 0.02
   perceptual_weight: 0.1
+  perceptual_type: "convnextv2"
+  perceptual_model_name: "convnextv2_tiny.fcmae_ft_in22k_in1k" # _384 and base or tiny
+  perceptual_checkpoint: "runs/perceptual_convnextv2/convnextv2_backbone_0014.pt"
+  perceptual_pretrained: false
   perceptual_layers: [8, 17, 26]
   perceptual_layer_weights: [1.0, 1.0, 1.0]
-  perceptual_pretrained: true
+  perceptual_convnext_layers: [0, 1, 2, 3]
+  perceptual_convnext_layer_weights: [1.0, 1.0, 1.0, 1.0]
+
+loss_schedule:
+  enabled: true
+  start_epoch: 5
+  transition_epochs: 10
+  initial:
+    pixel_weight: 1.0
+    edge_weight: 0.08
+    fft_weight: 0.0
+    perceptual_weight: 0.0
+  final:
+    pixel_weight: 0.9
+    edge_weight: 0.05
+    fft_weight: 0.02
+    perceptual_weight: 0.12
+
+perceptual_train:
+  data_dir: "G:/Programs/ArtifactsRemoverNN/dataset"
+  output_dir: "runs/perceptual_convnextv2"
+  resume: ""
+  model_name: "convnextv2_tiny.fcmae_ft_in22k_in1k" # _384 and base or tiny
+  pretrained: false
+  image_size: 224
+  batch_size: 32
+  num_workers: 6
+  epochs: 60
+  lr: 1.0e-3
+  weight_decay: 0.05
+  proj_dim: 2048
+  pred_dim: 512
+  amp: bf16
+  compile:
+    enabled: false
+    backend: "inductor"
+    mode: "default"
+    fullgraph: false
+    dynamic: false
+  log_every: 250
+  save_every_epochs: 1
+  scheduler:
+    name: cosine
+    warmup_steps: 1000
+    min_lr: 1.0e-6
 
 optimizer:
   lr: 2.0e-4
-  weight_decay: 1.0e-2
+  weight_decay: 1.0e-4
   betas: [0.9, 0.99]
   eps: 1.0e-8
 
@@ -56,15 +112,23 @@ ema:
   decay: 0.999
 
 train:
-  epochs: 200 # 200 epochs up to and including epoch 45, after epoch 45 reduced to 100 epochs
+  epochs: 100
   seed: 4
   amp: bf16
+  compile:
+    enabled: true
+    backend: "inductor"
+    mode: "default"
+    fullgraph: false
+    dynamic: false
   grad_clip_norm: 1.0
   grad_accum_steps: 1
+  perf_timing: true
+  perf_ema_decay: 0.9
   log_every: 250
   save_every_epochs: 1
-  output_dir: "runs/anime_sr_x2"
-  resume: ""
+  output_dir: "runs/anime_sr_x2_v3"
+  resume: "runs/anime_sr_x2_v3/ckpt_epoch_0018.pt"
 
 val:
   val_dir: "G:/Programs/ArtifactsRemoverNN/val"
@@ -86,9 +150,14 @@ val:
   degrade:
     blur_prob: 0.0
     blur_radius: 0.0
+    resize_prob: 0.0
+    resize_range: [1.0, 1.0]
     noise_prob: 0.0
     noise_sigma: 0.0
+    noise_gray_prob: 0.0
     jpeg_prob: 0.0
+    jpeg2_prob: 0.0
     jpeg_quality_min: 95
     jpeg_quality_max: 95
+    jpeg_subsampling_choices: [0]
     resample_methods: ["bicubic"]

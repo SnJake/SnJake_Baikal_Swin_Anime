@@ -36,11 +36,21 @@ class DegradationPipeline:
         self.scale = scale
         self.blur_prob = float(cfg.get("blur_prob", 0.2))
         self.blur_radius = float(cfg.get("blur_radius", 1.2))
+        self.resize_prob = float(cfg.get("resize_prob", 0.0))
+        resize_range = cfg.get("resize_range", [1.0, 1.0])
+        if isinstance(resize_range, (list, tuple)) and len(resize_range) == 2:
+            resize_min, resize_max = resize_range
+        else:
+            resize_min, resize_max = 1.0, 1.0
+        self.resize_range = (float(resize_min), float(resize_max))
         self.noise_prob = float(cfg.get("noise_prob", 0.2))
         self.noise_sigma = float(cfg.get("noise_sigma", 2.0))
+        self.noise_gray_prob = float(cfg.get("noise_gray_prob", 0.0))
         self.jpeg_prob = float(cfg.get("jpeg_prob", 0.2))
+        self.jpeg2_prob = float(cfg.get("jpeg2_prob", 0.0))
         self.jpeg_quality_min = int(cfg.get("jpeg_quality_min", 70))
         self.jpeg_quality_max = int(cfg.get("jpeg_quality_max", 95))
+        self.jpeg_subsampling_choices = cfg.get("jpeg_subsampling_choices", [0])
         self.resample_choices = cfg.get("resample_methods", ["bicubic"])
 
     def _random_resample(self):
@@ -52,18 +62,40 @@ class DegradationPipeline:
             return img
         arr = np.array(img, dtype=np.float32)
         sigma = random.uniform(0.1, self.noise_sigma)
-        noise = np.random.normal(0.0, sigma, arr.shape)
+        if self.noise_gray_prob > 0 and random.random() < self.noise_gray_prob:
+            noise = np.random.normal(0.0, sigma, (arr.shape[0], arr.shape[1], 1))
+            noise = np.repeat(noise, 3, axis=2)
+        else:
+            noise = np.random.normal(0.0, sigma, arr.shape)
         arr = np.clip(arr + noise, 0.0, 255.0).astype(np.uint8)
         return Image.fromarray(arr)
 
-    def _apply_jpeg(self, img):
-        if self.jpeg_prob <= 0 or random.random() >= self.jpeg_prob:
+    def _random_jpeg_subsampling(self):
+        if not self.jpeg_subsampling_choices:
+            return None
+        return random.choice(self.jpeg_subsampling_choices)
+
+    def _apply_jpeg(self, img, prob):
+        if prob <= 0 or random.random() >= prob:
             return img
         quality = random.randint(self.jpeg_quality_min, self.jpeg_quality_max)
+        subsampling = self._random_jpeg_subsampling()
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=quality, subsampling=0, optimize=True)
+        if subsampling is None:
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+        else:
+            img.save(buf, format="JPEG", quality=quality, subsampling=subsampling, optimize=True)
         buf.seek(0)
         return Image.open(buf).convert("RGB")
+
+    def _random_resize(self, img, target_w, target_h):
+        if self.resize_prob > 0 and random.random() < self.resize_prob:
+            scale = random.uniform(self.resize_range[0], self.resize_range[1])
+            inter_w = max(1, int(target_w * scale))
+            inter_h = max(1, int(target_h * scale))
+            img = img.resize((inter_w, inter_h), resample=self._random_resample())
+        img = img.resize((target_w, target_h), resample=self._random_resample())
+        return img
 
     def __call__(self, hr_img):
         if self.blur_prob > 0 and random.random() < self.blur_prob:
@@ -72,9 +104,10 @@ class DegradationPipeline:
 
         lr_w = max(1, hr_img.width // self.scale)
         lr_h = max(1, hr_img.height // self.scale)
-        hr_img = hr_img.resize((lr_w, lr_h), resample=self._random_resample())
+        hr_img = self._random_resize(hr_img, lr_w, lr_h)
         hr_img = self._apply_noise(hr_img)
-        hr_img = self._apply_jpeg(hr_img)
+        hr_img = self._apply_jpeg(hr_img, prob=self.jpeg_prob)
+        hr_img = self._apply_jpeg(hr_img, prob=self.jpeg2_prob)
         return hr_img
 
 
