@@ -32,7 +32,7 @@ _REMOTE_WEIGHTS = {
     "Baikal_Swin_Anime_x2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2.safetensors",
 }
 _WEIGHTS_CONFIG_MAP = {
-    "Baikal_Swin_Anime_V2.safetensors": _CONFIG_V2_PATH,
+    "Baikal_Swin_Anime_x2_V2.safetensors": _CONFIG_V2_PATH,
     "Baikal_Swin_Anime_x2.safetensors": _CONFIG_V1_PATH,
 }
 
@@ -370,3 +370,4 @@ class SnJakeAnimeUpscaleInference:
         result = torch.cat(outputs, dim=0)
         result = result.to(image.dtype)
         return (result,)
+
