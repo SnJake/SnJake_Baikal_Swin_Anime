@@ -90,7 +90,7 @@ V1:
 
 V2: 
 - Slightly sharper output, no edge noise artifacts.
-- Epochs: 70
+- Epochs: 20 (For now)
 - Dataset: 49,606 images from Danbooru2024: https://huggingface.co/datasets/deepghs/danbooru2024
 
 Training code is included in `training_code/` for reference.
@@ -106,3 +106,4 @@ This project was made purely for curiosity and personal interest. The code was w
 # License
 
 MIT. See `LICENSE.md`.
+
