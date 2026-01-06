@@ -6,3 +6,5 @@ PyYAML>=6.0
 tqdm>=4.66
 dists-pytorch>=0.1.1
 timm
+triton # or triton-windows
+
