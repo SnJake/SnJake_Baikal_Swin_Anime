@@ -23,10 +23,17 @@ from .training_code.utils import load_config
 _EMOJI = "\U0001F60E"
 _CATEGORY = f"{_EMOJI} SnJake/Upscale"
 _VALID_EXTS = (".pt", ".pth", ".ckpt", ".safetensors")
-_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "training_code", "config.yaml")
+_CONFIG_DIR = os.path.join(os.path.dirname(__file__), "training_code")
+_CONFIG_V2_PATH = os.path.join(_CONFIG_DIR, "config.yaml")
+_CONFIG_V1_PATH = os.path.join(_CONFIG_DIR, "config_v1_old.yaml")
 _WEIGHTS_BASE_URL = "https://huggingface.co/SnJake/Baikal-Swin-Anime/resolve/main"
 _REMOTE_WEIGHTS = {
+    "Baikal_Swin_Anime_V2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2_V2.safetensors",
     "Baikal_Swin_Anime_x2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2.safetensors",
+}
+_WEIGHTS_CONFIG_MAP = {
+    "Baikal_Swin_Anime_V2.safetensors": _CONFIG_V2_PATH,
+    "Baikal_Swin_Anime_x2.safetensors": _CONFIG_V1_PATH,
 }
 
 
@@ -136,6 +143,26 @@ def _resolve_weights_path(weights_name: str) -> str:
     )
 
 
+def _resolve_config_path(weights_name: str) -> str:
+    config_path = _WEIGHTS_CONFIG_MAP.get(weights_name)
+    if config_path is None:
+        config_path = _CONFIG_V2_PATH if os.path.isfile(_CONFIG_V2_PATH) else _CONFIG_V1_PATH
+
+    if not os.path.isfile(config_path):
+        available = [path for path in (_CONFIG_V2_PATH, _CONFIG_V1_PATH) if os.path.isfile(path)]
+        if available:
+            available_str = ", ".join([f"'{path}'" for path in available])
+            raise FileNotFoundError(
+                f"Config file not found for weights '{weights_name}'. Expected '{config_path}'. "
+                f"Available: {available_str}"
+            )
+        raise FileNotFoundError(
+            f"Config file not found for weights '{weights_name}'. Expected '{config_path}'."
+        )
+
+    return config_path
+
+
 def _load_checkpoint_any(path: str):
     if comfy_utils is not None:
         return comfy_utils.load_torch_file(path, safe_load=True)
@@ -230,9 +257,7 @@ class SnJakeAnimeUpscaleCheckpointLoader:
     CATEGORY = _CATEGORY
 
     def load(self, weights_name, force_reload):
-        config_path = _CONFIG_PATH
-        if not os.path.isfile(config_path):
-            raise FileNotFoundError(f"Config file not found: '{config_path}'")
+        config_path = _resolve_config_path(weights_name)
 
         weights_path = _resolve_weights_path(weights_name)
         cache_key = (weights_path, config_path)

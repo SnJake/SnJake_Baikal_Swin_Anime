@@ -1,6 +1,7 @@
 import argparse
 import gc
 import math
+import time
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -36,8 +37,133 @@ def build_scheduler(optimizer, cfg, total_steps):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
 
+def _extract_loss_weights(loss_cfg):
+    return {
+        "pixel_weight": float(loss_cfg.get("pixel_weight", 1.0)),
+        "edge_weight": float(loss_cfg.get("edge_weight", 0.0)),
+        "fft_weight": float(loss_cfg.get("fft_weight", 0.0)),
+        "perceptual_weight": float(loss_cfg.get("perceptual_weight", 0.0)),
+    }
+
+
+def _blend_weights(initial, final, t):
+    keys = set(initial.keys()) | set(final.keys())
+    blended = {}
+    for key in keys:
+        blended[key] = (1.0 - t) * float(initial.get(key, 0.0)) + t * float(final.get(key, 0.0))
+    return blended
+
+
+def build_loss_schedule(cfg):
+    schedule_cfg = cfg.get("loss_schedule", {})
+    if not isinstance(schedule_cfg, dict) or not bool(schedule_cfg.get("enabled", False)):
+        return None
+    base = _extract_loss_weights(cfg.get("loss", {}))
+    initial = dict(base)
+    initial.update(schedule_cfg.get("initial", {}) or {})
+    final = dict(base)
+    final.update(schedule_cfg.get("final", {}) or {})
+    return {
+        "start_epoch": int(schedule_cfg.get("start_epoch", 1)),
+        "transition_epochs": int(schedule_cfg.get("transition_epochs", 0)),
+        "initial": initial,
+        "final": final,
+    }
+
+
+def get_scheduled_weights(schedule, epoch_num):
+    start_epoch = schedule["start_epoch"]
+    transition_epochs = schedule["transition_epochs"]
+    if epoch_num < start_epoch:
+        t = 0.0
+    elif transition_epochs <= 0:
+        t = 1.0
+    else:
+        t = min(1.0, float(epoch_num - start_epoch) / float(transition_epochs))
+    return _blend_weights(schedule["initial"], schedule["final"], t)
+
+
 def val_collate(batch):
     return batch
+
+
+def _resolve_compile_backend(compile_cfg):
+    backend = str(compile_cfg.get("backend", "inductor")).lower()
+    fallback = str(compile_cfg.get("fallback_backend", "aot_eager")).strip().lower()
+    if backend != "inductor":
+        return backend
+    try:
+        from triton.compiler import compiler as triton_compiler
+
+        if not hasattr(triton_compiler, "triton_key"):
+            raise ImportError("triton_key is missing")
+    except Exception as exc:
+        if fallback:
+            print(f"Inductor backend unavailable ({exc}); using {fallback}.")
+            return fallback
+        print(f"Inductor backend unavailable ({exc}); skipping torch.compile.")
+        return None
+    return backend
+
+
+def maybe_compile(model, compile_cfg, device):
+    if not isinstance(compile_cfg, dict) or not bool(compile_cfg.get("enabled", False)):
+        return model
+    if not hasattr(torch, "compile"):
+        print("torch.compile is not available; skipping.")
+        return model
+    if device.type != "cuda":
+        print("torch.compile is enabled but CUDA is not available; skipping.")
+        return model
+    backend = _resolve_compile_backend(compile_cfg)
+    if backend is None:
+        return model
+    mode = str(compile_cfg.get("mode", "default"))
+    fullgraph = bool(compile_cfg.get("fullgraph", False))
+    dynamic = bool(compile_cfg.get("dynamic", False))
+    suppress_errors = bool(compile_cfg.get("suppress_errors", False))
+    if suppress_errors:
+        try:
+            import torch._dynamo as dynamo
+
+            dynamo.config.suppress_errors = True
+        except Exception as exc:
+            print(f"Warning: failed to set torch._dynamo.config.suppress_errors: {exc}")
+    try:
+        model = torch.compile(
+            model,
+            backend=backend,
+            mode=mode,
+            fullgraph=fullgraph,
+            dynamic=dynamic,
+        )
+    except Exception as exc:
+        fallback = str(compile_cfg.get("fallback_backend", "")).strip().lower()
+        if fallback and fallback != backend:
+            print(f"torch.compile failed with backend={backend}: {exc}. Trying {fallback}.")
+            try:
+                model = torch.compile(
+                    model,
+                    backend=fallback,
+                    mode=mode,
+                    fullgraph=fullgraph,
+                    dynamic=dynamic,
+                )
+                print(
+                    "torch.compile enabled "
+                    f"(backend={fallback}, mode={mode}, fullgraph={fullgraph}, dynamic={dynamic})."
+                )
+                return model
+            except Exception as fallback_exc:
+                print(f"torch.compile failed: {fallback_exc}. Falling back to eager.")
+                return model
+        print(f"torch.compile failed: {exc}. Falling back to eager.")
+        return model
+    print(
+        "torch.compile enabled "
+        f"(backend={backend}, mode={mode}, fullgraph={fullgraph}, dynamic={dynamic})."
+    )
+    return model
 
 
 @torch.inference_mode()
@@ -84,9 +210,14 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    set_seed(cfg.get("train", {}).get("seed"))
+    train_cfg = cfg.get("train", {})
+    set_seed(train_cfg.get("seed"))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == "cuda":
+        torch.set_float32_matmul_precision("high")
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
 
     data_cfg = cfg.get("data", {})
     train_dir = data_cfg.get("train_dir")
@@ -104,32 +235,37 @@ def main():
     )
     num_workers = int(data_cfg.get("num_workers", 4))
     batch_size = int(data_cfg.get("batch_size", 16))
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-        drop_last=True,
-        persistent_workers=num_workers > 0,
-    )
+    pin_memory = bool(data_cfg.get("pin_memory", True))
+    prefetch_factor = data_cfg.get("prefetch_factor")
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "shuffle": True,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
+        "drop_last": True,
+        "persistent_workers": num_workers > 0,
+    }
+    if num_workers > 0 and prefetch_factor is not None:
+        loader_kwargs["prefetch_factor"] = int(prefetch_factor)
+    loader = DataLoader(dataset, **loader_kwargs)
 
     model = build_model(cfg.get("model", {}), scale=int(data_cfg.get("scale", 2)))
     model = model.to(device)
+    base_model = model
 
     loss_fn = CombinedLoss(cfg.get("loss", {})).to(device)
+    loss_schedule = build_loss_schedule(cfg)
 
     optim_cfg = cfg.get("optimizer", {})
     lr = float(optim_cfg.get("lr", 2e-4))
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        base_model.parameters(),
         lr=lr,
         betas=tuple(optim_cfg.get("betas", (0.9, 0.99))),
         eps=float(optim_cfg.get("eps", 1e-8)),
         weight_decay=float(optim_cfg.get("weight_decay", 1e-2)),
     )
 
-    train_cfg = cfg.get("train", {})
     grad_accum = int(train_cfg.get("grad_accum_steps", 1))
     grad_accum = max(1, grad_accum)
     grad_clip = float(train_cfg.get("grad_clip_norm", 0.0))
@@ -144,7 +280,7 @@ def main():
     ema_cfg = cfg.get("ema", {})
     ema = None
     if bool(ema_cfg.get("enabled", True)):
-        ema = EMA(model, decay=float(ema_cfg.get("decay", 0.999)))
+        ema = EMA(base_model, decay=float(ema_cfg.get("decay", 0.999)))
 
     amp_mode = str(train_cfg.get("amp", "bf16")).lower()
     use_amp = amp_mode in ("fp16", "bf16") and device.type == "cuda"
@@ -159,16 +295,26 @@ def main():
     resume_path = train_cfg.get("resume")
     if resume_path:
         ckpt = torch.load(resume_path, map_location="cpu")
-        model.load_state_dict(ckpt["model"])
-        optimizer.load_state_dict(ckpt["optimizer"])
-        scheduler.load_state_dict(ckpt["scheduler"])
-        if "scaler" in ckpt and scaler is not None:
-            scaler.load_state_dict(ckpt["scaler"])
-        if ema is not None and "ema" in ckpt:
-            ema.load_state_dict(ckpt["ema"])
-        start_epoch = int(ckpt.get("epoch", 0)) + 1
-        global_step = int(ckpt.get("global_step", 0))
+        base_model.load_state_dict(ckpt["model"])
+        has_optim = "optimizer" in ckpt and "scheduler" in ckpt
+        if has_optim:
+            optimizer.load_state_dict(ckpt["optimizer"])
+            scheduler.load_state_dict(ckpt["scheduler"])
+            if "scaler" in ckpt and scaler is not None:
+                scaler.load_state_dict(ckpt["scaler"])
+            if ema is not None and "ema" in ckpt:
+                ema.load_state_dict(ckpt["ema"])
+            start_epoch = int(ckpt.get("epoch", 0)) + 1
+            global_step = int(ckpt.get("global_step", 0))
+        else:
+            if ema is not None:
+                if "ema" in ckpt:
+                    ema.load_state_dict(ckpt["ema"])
+                else:
+                    ema = EMA(base_model, decay=float(ema_cfg.get("decay", 0.999)))
+            print("Loaded weights only (no optimizer/scheduler). Starting with fresh optimizer/scheduler state.")
 
+    model = maybe_compile(base_model, train_cfg.get("compile", {}), device)
     optimizer.zero_grad(set_to_none=True)
 
     val_cfg = cfg.get("val", {})
@@ -223,11 +369,27 @@ def main():
     val_tile = int(val_cfg.get("tile", 0)) if isinstance(val_cfg, dict) else 0
     val_overlap = int(val_cfg.get("overlap", 16)) if isinstance(val_cfg, dict) else 16
     val_max_images = int(val_cfg.get("max_images", 0)) if isinstance(val_cfg, dict) else 0
+    perf_enabled = bool(train_cfg.get("perf_timing", True))
+    perf_ema_decay = float(train_cfg.get("perf_ema_decay", 0.9))
+    data_time_ema = None
+    compute_time_ema = None
+    data_time_sum = 0.0
+    compute_time_sum = 0.0
+    perf_steps = 0
 
     for epoch in range(start_epoch, epochs):
+        if loss_schedule is not None:
+            scheduled_weights = get_scheduled_weights(loss_schedule, epoch + 1)
+            loss_fn.update_weights(scheduled_weights)
+
         model.train()
         progress = tqdm(loader, desc=f"Epoch {epoch + 1}/{epochs}", dynamic_ncols=True)
+        end_time = time.perf_counter()
         for step, (lr_img, hr_img) in enumerate(progress):
+            if perf_enabled:
+                now = time.perf_counter()
+                data_time = now - end_time
+                compute_start = now
             lr_img = lr_img.to(device, non_blocking=True)
             hr_img = hr_img.to(device, non_blocking=True)
 
@@ -250,7 +412,7 @@ def main():
                 if grad_clip > 0:
                     if scaler.is_enabled():
                         scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                    torch.nn.utils.clip_grad_norm_(base_model.parameters(), grad_clip)
                 if scaler.is_enabled():
                     scaler.step(optimizer)
                     scaler.update()
@@ -259,7 +421,7 @@ def main():
                 optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
                 if ema is not None:
-                    ema.update(model)
+                    ema.update(base_model)
 
                 global_step += 1
                 if global_step % log_every == 0:
@@ -269,10 +431,35 @@ def main():
                         "step": global_step,
                         "lr": lr_now,
                     }
+                    if perf_enabled and perf_steps > 0:
+                        log_row["data_ms"] = (data_time_sum / perf_steps) * 1000.0
+                        log_row["compute_ms"] = (compute_time_sum / perf_steps) * 1000.0
+                        data_time_sum = 0.0
+                        compute_time_sum = 0.0
+                        perf_steps = 0
                     log_row.update(loss_details)
                     append_jsonl(log_path, log_row)
 
-            progress.set_postfix(loss=loss_details.get("total", 0.0))
+            if perf_enabled:
+                compute_time = time.perf_counter() - compute_start
+                end_time = time.perf_counter()
+                data_time_sum += data_time
+                compute_time_sum += compute_time
+                perf_steps += 1
+                if data_time_ema is None:
+                    data_time_ema = data_time
+                    compute_time_ema = compute_time
+                else:
+                    data_time_ema = data_time_ema * perf_ema_decay + data_time * (1.0 - perf_ema_decay)
+                    compute_time_ema = compute_time_ema * perf_ema_decay + compute_time * (1.0 - perf_ema_decay)
+                progress.set_postfix(
+                    loss=loss_details.get("total", 0.0),
+                    data_ms=f"{data_time_ema * 1000.0:.1f}",
+                    compute_ms=f"{compute_time_ema * 1000.0:.1f}",
+                )
+            else:
+                end_time = time.perf_counter()
+                progress.set_postfix(loss=loss_details.get("total", 0.0))
 
         if val_loader is not None and (epoch + 1) % val_every == 0:
             model.eval()
@@ -364,7 +551,7 @@ def main():
             ckpt = {
                 "epoch": epoch,
                 "global_step": global_step,
-                "model": model.state_dict(),
+                "model": base_model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "scheduler": scheduler.state_dict(),
             }
@@ -377,7 +564,7 @@ def main():
             torch.save(ckpt, ckpt_path)
             torch.save(ckpt, output_dir / "ckpt_last.pt")
 
-            weights_state = ema.get_model_state(model) if ema is not None else model.state_dict()
+            weights_state = ema.get_model_state(base_model) if ema is not None else base_model.state_dict()
             weights_path = output_dir / f"weights_epoch_{epoch + 1:04d}.pt"
             torch.save({"model": weights_state}, weights_path)
             torch.save({"model": weights_state}, output_dir / "weights_last.pt")
