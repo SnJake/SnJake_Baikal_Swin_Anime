@@ -7,10 +7,10 @@ SnJake Baikal-Swin-Anime x2 is a custom ComfyUI node for upscaling anime/illustr
 ---
 
 # Examples
+<img width="4096" height="2048" alt="Example_3" src="https://github.com/user-attachments/assets/12e77d78-acee-4bff-9ccb-e82fc92bf23e" />
+<img width="4096" height="2048" alt="Example_2" src="https://github.com/user-attachments/assets/2382d7bf-bdfd-4f40-abd6-834238c825aa" />
+<img width="4096" height="2048" alt="Example_1" src="https://github.com/user-attachments/assets/a80bcb47-8568-4365-a6da-2bbd303c6f59" />
 
-<img width="4096" height="4096" alt="Diff 1" src="https://github.com/user-attachments/assets/7e4b7305-c5f3-47a9-8945-9bd9d7db4ced" />
-<img width="4096" height="2048" alt="Diff 4" src="https://github.com/user-attachments/assets/c7d0427d-4a65-444e-a317-289c8741c3c8" />
-<img width="4096" height="2048" alt="Diff 3" src="https://github.com/user-attachments/assets/6204b5eb-c6fc-4b95-bb80-0c611f9ae5e9" />
 
 ---
 
@@ -108,5 +108,6 @@ This project was made purely for curiosity and personal interest. The code was w
 # License
 
 MIT. See `LICENSE.md`.
+
 
 
