@@ -95,6 +95,10 @@ V2:
 - Perceptual backbone: convnextv2_tiny.fcmae_ft_in22k_in1k, fine‑tuned on anime to improve feature sensitivity.
 - Loss schedule: gradual ramp‑in of perceptual/auxiliary losses for stable training.
 
+V2.1:
+- Removed Nearest from resample_methods
+- Epochs: 30 (For now)
+
 Training code is included in `training_code/` for reference.
 
 ---
@@ -108,6 +112,7 @@ This project was made purely for curiosity and personal interest. The code was w
 # License
 
 MIT. See `LICENSE.md`.
+
 
 
 
