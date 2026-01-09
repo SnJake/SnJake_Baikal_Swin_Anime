@@ -90,17 +90,17 @@ V1:
 
 V2: 
 - Slightly sharper output, no edge noise artifacts.
-- Epochs: 20 (For now)
+- Epochs: 20
 - Dataset: 49,606 images from Danbooru2024: https://huggingface.co/datasets/deepghs/danbooru2024
 - Perceptual backbone: convnextv2_tiny.fcmae_ft_in22k_in1k, fine‑tuned on anime to improve feature sensitivity.
 - Loss schedule: gradual ramp‑in of perceptual/auxiliary losses for stable training.
 
 V2.1:
 - Removed Nearest from resample_methods
-- Epochs: 30 (For now)
+- Epochs: 30
 
 V2.2:
-- 40 epochs
+- Epochs: 40 (For now)
 
 Training code is included in `training_code/` for reference.
 
@@ -115,6 +115,7 @@ This project was made purely for curiosity and personal interest. The code was w
 # License
 
 MIT. See `LICENSE.md`.
+
 
 
 
