@@ -99,6 +99,9 @@ V2.1:
 - Removed Nearest from resample_methods
 - Epochs: 30 (For now)
 
+V2.2:
+- 40 epochs
+
 Training code is included in `training_code/` for reference.
 
 ---
@@ -112,6 +115,7 @@ This project was made purely for curiosity and personal interest. The code was w
 # License
 
 MIT. See `LICENSE.md`.
+
 
 
 
