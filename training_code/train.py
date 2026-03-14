@@ -12,7 +12,7 @@ from tqdm import tqdm
 from data import AnimeSRDataset
 from losses import CombinedLoss
 from metrics import build_dists, calc_dists, calc_psnr, calc_ssim
-from model import build_model
+from model import build_discriminator, build_model
 from utils import EMA, append_jsonl, ensure_dir, load_config, set_seed
 
 
@@ -87,16 +87,28 @@ def val_collate(batch):
     return batch
 
 
+def _set_requires_grad(module, requires_grad):
+    if module is None:
+        return
+    for param in module.parameters():
+        param.requires_grad = requires_grad
+
+
+def hinge_d_loss(real_logits, fake_logits):
+    return 0.5 * (torch.relu(1.0 - real_logits).mean() + torch.relu(1.0 + fake_logits).mean())
+
+
+def hinge_g_loss(fake_logits):
+    return -fake_logits.mean()
+
+
 def _resolve_compile_backend(compile_cfg):
     backend = str(compile_cfg.get("backend", "inductor")).lower()
     fallback = str(compile_cfg.get("fallback_backend", "aot_eager")).strip().lower()
     if backend != "inductor":
         return backend
     try:
-        from triton.compiler import compiler as triton_compiler
-
-        if not hasattr(triton_compiler, "triton_key"):
-            raise ImportError("triton_key is missing")
+        import triton  # noqa: F401
     except Exception as exc:
         if fallback:
             print(f"Inductor backend unavailable ({exc}); using {fallback}.")
@@ -167,7 +179,7 @@ def maybe_compile(model, compile_cfg, device):
 
 
 @torch.inference_mode()
-def infer_tiled(model, lr, scale, tile, overlap, amp_ctx):
+def infer_tiled(model, lr, scale, tile, overlap, amp_ctx, tile_batch_size=1):
     b, c, h, w = lr.shape
     out_h = h * scale
     out_w = w * scale
@@ -176,17 +188,31 @@ def infer_tiled(model, lr, scale, tile, overlap, amp_ctx):
 
     tile = min(tile, h, w)
     overlap = max(0, min(overlap, tile // 2))
+    tile_batch_size = max(1, int(tile_batch_size))
 
+    coords = []
     for y in range(0, h, tile):
         for x in range(0, w, tile):
+            coords.append((x, y))
+
+    max_in_h = min(h, tile + 2 * overlap)
+    max_in_w = min(w, tile + 2 * overlap)
+
+    for idx in range(0, len(coords), tile_batch_size):
+        chunk = coords[idx : idx + tile_batch_size]
+        lr_tiles = []
+        tile_meta = []
+        for x, y in chunk:
             x0 = max(x - overlap, 0)
             y0 = max(y - overlap, 0)
             x1 = min(x + tile + overlap, w)
             y1 = min(y + tile + overlap, h)
 
             lr_tile = lr[:, :, y0:y1, x0:x1]
-            with amp_ctx:
-                sr_tile = model(lr_tile).float()
+            pad_h = max_in_h - lr_tile.shape[-2]
+            pad_w = max_in_w - lr_tile.shape[-1]
+            if pad_h > 0 or pad_w > 0:
+                lr_tile = torch.nn.functional.pad(lr_tile, (0, pad_w, 0, pad_h), mode="replicate")
 
             out_x0 = x * scale
             out_y0 = y * scale
@@ -198,6 +224,16 @@ def infer_tiled(model, lr, scale, tile, overlap, amp_ctx):
             tile_x1 = tile_x0 + (out_x1 - out_x0)
             tile_y1 = tile_y0 + (out_y1 - out_y0)
 
+            lr_tiles.append(lr_tile)
+            tile_meta.append((out_x0, out_y0, out_x1, out_y1, tile_x0, tile_y0, tile_x1, tile_y1))
+
+        lr_tiles = torch.cat(lr_tiles, dim=0)
+        with amp_ctx:
+            sr_tiles = model(lr_tiles).float()
+
+        for i, meta in enumerate(tile_meta):
+            out_x0, out_y0, out_x1, out_y1, tile_x0, tile_y0, tile_x1, tile_y1 = meta
+            sr_tile = sr_tiles[i : i + 1]
             output[:, :, out_y0:out_y1, out_x0:out_x1] += sr_tile[:, :, tile_y0:tile_y1, tile_x0:tile_x1]
             weight[:, :, out_y0:out_y1, out_x0:out_x1] += 1.0
 
@@ -266,6 +302,29 @@ def main():
         weight_decay=float(optim_cfg.get("weight_decay", 1e-2)),
     )
 
+    gan_cfg = cfg.get("gan", {})
+    disc_cfg = cfg.get("discriminator", {})
+    base_discriminator = build_discriminator(disc_cfg)
+    discriminator = None
+    optimizer_d = None
+    scheduler_d = None
+    disc_grad_clip = 0.0
+    gan_enabled = base_discriminator is not None and bool(gan_cfg.get("enabled", False))
+    gan_weight = float(gan_cfg.get("weight", 0.0))
+    gan_start_epoch = int(gan_cfg.get("start_epoch", 1))
+    disc_steps = max(1, int(gan_cfg.get("discriminator_steps", 1)))
+    if base_discriminator is not None:
+        base_discriminator = base_discriminator.to(device)
+        disc_lr = float(disc_cfg.get("lr", lr))
+        optimizer_d = torch.optim.AdamW(
+            base_discriminator.parameters(),
+            lr=disc_lr,
+            betas=tuple(disc_cfg.get("betas", optim_cfg.get("betas", (0.9, 0.99)))),
+            eps=float(disc_cfg.get("eps", optim_cfg.get("eps", 1e-8))),
+            weight_decay=float(disc_cfg.get("weight_decay", optim_cfg.get("weight_decay", 1e-2))),
+        )
+        disc_grad_clip = float(disc_cfg.get("grad_clip_norm", 0.0))
+
     grad_accum = int(train_cfg.get("grad_accum_steps", 1))
     grad_accum = max(1, grad_accum)
     grad_clip = float(train_cfg.get("grad_clip_norm", 0.0))
@@ -286,9 +345,16 @@ def main():
     use_amp = amp_mode in ("fp16", "bf16") and device.type == "cuda"
     amp_dtype = torch.float16 if amp_mode == "fp16" else torch.bfloat16
     scaler = torch.amp.GradScaler(enabled=(amp_mode == "fp16" and device.type == "cuda"))
+    scaler_d = torch.amp.GradScaler(enabled=(amp_mode == "fp16" and device.type == "cuda")) if optimizer_d else None
 
     total_steps = max(1, (len(loader) * epochs) // grad_accum)
     scheduler = build_scheduler(optimizer, cfg.get("scheduler", {}), total_steps=total_steps)
+    if optimizer_d is not None:
+        scheduler_d = build_scheduler(
+            optimizer_d,
+            disc_cfg.get("scheduler", cfg.get("scheduler", {})),
+            total_steps=total_steps,
+        )
 
     start_epoch = 0
     global_step = 0
@@ -296,12 +362,19 @@ def main():
     if resume_path:
         ckpt = torch.load(resume_path, map_location="cpu")
         base_model.load_state_dict(ckpt["model"])
+        if base_discriminator is not None and "discriminator" in ckpt:
+            base_discriminator.load_state_dict(ckpt["discriminator"])
         has_optim = "optimizer" in ckpt and "scheduler" in ckpt
         if has_optim:
             optimizer.load_state_dict(ckpt["optimizer"])
             scheduler.load_state_dict(ckpt["scheduler"])
             if "scaler" in ckpt and scaler is not None:
                 scaler.load_state_dict(ckpt["scaler"])
+            if optimizer_d is not None and "optimizer_d" in ckpt and "scheduler_d" in ckpt:
+                optimizer_d.load_state_dict(ckpt["optimizer_d"])
+                scheduler_d.load_state_dict(ckpt["scheduler_d"])
+                if scaler_d is not None and "scaler_d" in ckpt:
+                    scaler_d.load_state_dict(ckpt["scaler_d"])
             if ema is not None and "ema" in ckpt:
                 ema.load_state_dict(ckpt["ema"])
             start_epoch = int(ckpt.get("epoch", 0)) + 1
@@ -315,7 +388,12 @@ def main():
             print("Loaded weights only (no optimizer/scheduler). Starting with fresh optimizer/scheduler state.")
 
     model = maybe_compile(base_model, train_cfg.get("compile", {}), device)
+    if base_discriminator is not None:
+        discriminator = maybe_compile(base_discriminator, disc_cfg.get("compile", {}), device)
+        _set_requires_grad(base_discriminator, False)
     optimizer.zero_grad(set_to_none=True)
+    if optimizer_d is not None:
+        optimizer_d.zero_grad(set_to_none=True)
 
     val_cfg = cfg.get("val", {})
     val_dir = val_cfg.get("val_dir") if isinstance(val_cfg, dict) else None
@@ -368,6 +446,7 @@ def main():
     val_every = int(val_cfg.get("every_epochs", 1)) if isinstance(val_cfg, dict) else 1
     val_tile = int(val_cfg.get("tile", 0)) if isinstance(val_cfg, dict) else 0
     val_overlap = int(val_cfg.get("overlap", 16)) if isinstance(val_cfg, dict) else 16
+    val_tile_batch_size = int(val_cfg.get("tile_batch_size", 1)) if isinstance(val_cfg, dict) else 1
     val_max_images = int(val_cfg.get("max_images", 0)) if isinstance(val_cfg, dict) else 0
     perf_enabled = bool(train_cfg.get("perf_timing", True))
     perf_ema_decay = float(train_cfg.get("perf_ema_decay", 0.9))
@@ -376,6 +455,7 @@ def main():
     data_time_sum = 0.0
     compute_time_sum = 0.0
     perf_steps = 0
+    disc_had_grad = False
 
     for epoch in range(start_epoch, epochs):
         if loss_schedule is not None:
@@ -383,6 +463,8 @@ def main():
             loss_fn.update_weights(scheduled_weights)
 
         model.train()
+        if discriminator is not None:
+            discriminator.train()
         progress = tqdm(loader, desc=f"Epoch {epoch + 1}/{epochs}", dynamic_ncols=True)
         end_time = time.perf_counter()
         for step, (lr_img, hr_img) in enumerate(progress):
@@ -401,7 +483,33 @@ def main():
             with ctx:
                 sr = model(lr_img)
                 loss, loss_details = loss_fn(sr, hr_img)
-                loss_scaled = loss / grad_accum
+
+            gan_active = gan_enabled and gan_weight > 0 and (epoch + 1) >= gan_start_epoch
+            should_train_disc = gan_active and (step % disc_steps == 0)
+
+            if should_train_disc:
+                _set_requires_grad(base_discriminator, True)
+                with ctx:
+                    real_logits = discriminator(hr_img)
+                    fake_logits = discriminator(sr.detach())
+                    d_loss = hinge_d_loss(real_logits, fake_logits)
+                    d_loss_scaled = d_loss / grad_accum
+                if scaler_d is not None and scaler_d.is_enabled():
+                    scaler_d.scale(d_loss_scaled).backward()
+                else:
+                    d_loss_scaled.backward()
+                disc_had_grad = True
+                loss_details["disc"] = float(d_loss.detach().cpu())
+                _set_requires_grad(base_discriminator, False)
+
+            if gan_active:
+                with ctx:
+                    adv_loss = hinge_g_loss(discriminator(sr)) * gan_weight
+                loss = loss + adv_loss
+                loss_details["adv"] = float(adv_loss.detach().cpu())
+                loss_details["total"] = float(loss.detach().cpu())
+
+            loss_scaled = loss / grad_accum
 
             if scaler.is_enabled():
                 scaler.scale(loss_scaled).backward()
@@ -420,6 +528,20 @@ def main():
                     optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 scheduler.step()
+                if optimizer_d is not None and disc_had_grad:
+                    if disc_grad_clip > 0:
+                        if scaler_d is not None and scaler_d.is_enabled():
+                            scaler_d.unscale_(optimizer_d)
+                        torch.nn.utils.clip_grad_norm_(base_discriminator.parameters(), disc_grad_clip)
+                    if scaler_d is not None and scaler_d.is_enabled():
+                        scaler_d.step(optimizer_d)
+                        scaler_d.update()
+                    else:
+                        optimizer_d.step()
+                    optimizer_d.zero_grad(set_to_none=True)
+                    if scheduler_d is not None:
+                        scheduler_d.step()
+                    disc_had_grad = False
                 if ema is not None:
                     ema.update(base_model)
 
@@ -431,6 +553,8 @@ def main():
                         "step": global_step,
                         "lr": lr_now,
                     }
+                    if optimizer_d is not None:
+                        log_row["lr_d"] = optimizer_d.param_groups[0]["lr"]
                     if perf_enabled and perf_steps > 0:
                         log_row["data_ms"] = (data_time_sum / perf_steps) * 1000.0
                         log_row["compute_ms"] = (compute_time_sum / perf_steps) * 1000.0
@@ -461,7 +585,43 @@ def main():
                 end_time = time.perf_counter()
                 progress.set_postfix(loss=loss_details.get("total", 0.0))
 
-        if val_loader is not None and (epoch + 1) % val_every == 0:
+        should_val = val_loader is not None and (epoch + 1) % val_every == 0
+        should_save_epoch = (epoch + 1) % save_every == 0 or (epoch + 1) == epochs
+        # Always save last checkpoint before validation to avoid progress loss on val-time crashes.
+        should_save_last = should_save_epoch or should_val
+
+        if should_save_last:
+            ckpt = {
+                "epoch": epoch,
+                "global_step": global_step,
+                "model": base_model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+            }
+            if scaler.is_enabled():
+                ckpt["scaler"] = scaler.state_dict()
+            if ema is not None:
+                ckpt["ema"] = ema.state_dict()
+            if base_discriminator is not None:
+                ckpt["discriminator"] = base_discriminator.state_dict()
+            if optimizer_d is not None:
+                ckpt["optimizer_d"] = optimizer_d.state_dict()
+            if scheduler_d is not None:
+                ckpt["scheduler_d"] = scheduler_d.state_dict()
+            if scaler_d is not None and scaler_d.is_enabled():
+                ckpt["scaler_d"] = scaler_d.state_dict()
+
+            torch.save(ckpt, output_dir / "ckpt_last.pt")
+            weights_state = ema.get_model_state(base_model) if ema is not None else base_model.state_dict()
+            torch.save({"model": weights_state}, output_dir / "weights_last.pt")
+
+            if should_save_epoch:
+                ckpt_path = output_dir / f"ckpt_epoch_{epoch + 1:04d}.pt"
+                torch.save(ckpt, ckpt_path)
+                weights_path = output_dir / f"weights_epoch_{epoch + 1:04d}.pt"
+                torch.save({"model": weights_state}, weights_path)
+
+        if should_val:
             model.eval()
             total_count = 0
             sum_psnr = 0.0
@@ -498,10 +658,16 @@ def main():
 
                     if val_tile and val_tile > 0:
                         sr = infer_tiled(
-                            model, lr_img, int(data_cfg.get("scale", 2)), val_tile, val_overlap, amp_ctx
+                            model,
+                            lr_img,
+                            int(data_cfg.get("scale", 2)),
+                            val_tile,
+                            val_overlap,
+                            amp_ctx,
+                            tile_batch_size=val_tile_batch_size,
                         )
                     else:
-                        with amp_ctx:
+                        with torch.no_grad(), amp_ctx:
                             sr = model(lr_img).float()
 
                     sr = sr.clamp(0, 1)
@@ -546,29 +712,6 @@ def main():
                     pass
             if gc_collect:
                 gc.collect()
-
-        if (epoch + 1) % save_every == 0 or (epoch + 1) == epochs:
-            ckpt = {
-                "epoch": epoch,
-                "global_step": global_step,
-                "model": base_model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
-            }
-            if scaler.is_enabled():
-                ckpt["scaler"] = scaler.state_dict()
-            if ema is not None:
-                ckpt["ema"] = ema.state_dict()
-
-            ckpt_path = output_dir / f"ckpt_epoch_{epoch + 1:04d}.pt"
-            torch.save(ckpt, ckpt_path)
-            torch.save(ckpt, output_dir / "ckpt_last.pt")
-
-            weights_state = ema.get_model_state(base_model) if ema is not None else base_model.state_dict()
-            weights_path = output_dir / f"weights_epoch_{epoch + 1:04d}.pt"
-            torch.save({"model": weights_state}, weights_path)
-            torch.save({"model": weights_state}, output_dir / "weights_last.pt")
-
 
 if __name__ == "__main__":
     main()

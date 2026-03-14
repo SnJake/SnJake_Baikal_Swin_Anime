@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils import spectral_norm
 
 
 def _window_partition(x, window_size):
@@ -93,16 +94,18 @@ class WindowAttention(nn.Module):
         attn = (q @ k.transpose(-2, -1))
 
         relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)]
-        relative_position_bias = relative_position_bias.view(n, n, -1).permute(2, 0, 1)
+        relative_position_bias = relative_position_bias.view(n, n, -1).permute(2, 0, 1).to(dtype=attn.dtype)
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
             nW = mask.shape[0]
             attn = attn.view(b_ // nW, nW, self.num_heads, n, n)
-            attn = attn + mask.unsqueeze(1).unsqueeze(0)
+            attn = attn + mask.to(dtype=attn.dtype).unsqueeze(1).unsqueeze(0)
             attn = attn.view(-1, self.num_heads, n, n)
 
         attn = F.softmax(attn, dim=-1)
+        if attn.dtype != v.dtype:
+            attn = attn.to(dtype=v.dtype)
         attn = self.attn_drop(attn)
         x = (attn @ v).transpose(1, 2).reshape(b_, n, c)
         x = self.proj(x)
@@ -170,15 +173,18 @@ class WindowAttentionV2(nn.Module):
         relative_position_bias = relative_position_bias[self.relative_position_index.view(-1)]
         relative_position_bias = relative_position_bias.view(n, n, -1).permute(2, 0, 1).contiguous()
         relative_position_bias = 16 * torch.sigmoid(relative_position_bias)
+        relative_position_bias = relative_position_bias.to(dtype=attn.dtype)
         attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
             nW = mask.shape[0]
             attn = attn.view(b_ // nW, nW, self.num_heads, n, n)
-            attn = attn + mask.unsqueeze(1).unsqueeze(0)
+            attn = attn + mask.to(dtype=attn.dtype).unsqueeze(1).unsqueeze(0)
             attn = attn.view(-1, self.num_heads, n, n)
 
         attn = F.softmax(attn, dim=-1)
+        if attn.dtype != v.dtype:
+            attn = attn.to(dtype=v.dtype)
         attn = self.attn_drop(attn)
         x = (attn @ v).transpose(1, 2).reshape(b_, n, c)
         x = self.proj(x)
@@ -469,6 +475,158 @@ class Upsample(nn.Sequential):
         super().__init__(*m)
 
 
+class PatchEmbed(nn.Module):
+    def __init__(self, embed_dim, norm_layer=None):
+        super().__init__()
+        self.norm = norm_layer(embed_dim) if norm_layer is not None else None
+
+    def forward(self, x):
+        x = x.flatten(2).transpose(1, 2)
+        if self.norm is not None:
+            x = self.norm(x)
+        return x
+
+
+class PatchUnEmbed(nn.Module):
+    def __init__(self, embed_dim):
+        super().__init__()
+        self.embed_dim = embed_dim
+
+    def forward(self, x, h, w):
+        return x.transpose(1, 2).view(x.shape[0], self.embed_dim, h, w)
+
+
+class FourierUnit(nn.Module):
+    def __init__(self, embed_dim, fft_norm="ortho"):
+        super().__init__()
+        self.conv = nn.Conv2d(embed_dim * 2, embed_dim * 2, 1, 1, 0)
+        self.act = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+        self.fft_norm = fft_norm
+
+    def forward(self, x):
+        input_dtype = x.dtype
+        if input_dtype not in (torch.float32, torch.float64):
+            x = x.float()
+        batch = x.shape[0]
+        ffted = torch.fft.rfftn(x, dim=(-2, -1), norm=self.fft_norm)
+        ffted = torch.stack((ffted.real, ffted.imag), dim=-1)
+        ffted = ffted.permute(0, 1, 4, 2, 3).contiguous()
+        ffted = ffted.view(batch, -1, ffted.shape[-2], ffted.shape[-1])
+        conv_dtype = self.conv.weight.dtype
+        if ffted.dtype != conv_dtype:
+            ffted = ffted.to(dtype=conv_dtype)
+        ffted = self.act(self.conv(ffted))
+        ffted = ffted.view(batch, -1, 2, ffted.shape[-2], ffted.shape[-1]).permute(0, 1, 3, 4, 2).contiguous()
+        if ffted.dtype not in (torch.float16, torch.float32, torch.float64):
+            ffted = ffted.float()
+        ffted = torch.complex(ffted[..., 0], ffted[..., 1])
+        out = torch.fft.irfftn(ffted, s=x.shape[-2:], dim=(-2, -1), norm=self.fft_norm)
+        if out.dtype != input_dtype:
+            out = out.to(dtype=input_dtype)
+        return out
+
+
+class SpectralTransform(nn.Module):
+    def __init__(self, embed_dim, last_conv=False):
+        super().__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(embed_dim, embed_dim // 2, 1, 1, 0),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+        )
+        self.fourier = FourierUnit(embed_dim // 2)
+        self.conv2 = nn.Conv2d(embed_dim // 2, embed_dim, 1, 1, 0)
+        self.last_conv = nn.Conv2d(embed_dim, embed_dim, 3, 1, 1) if last_conv else None
+
+    def forward(self, x):
+        x_in = self.conv1(x)
+        out = self.conv2(x_in + self.fourier(x_in))
+        if self.last_conv is not None:
+            out = self.last_conv(out)
+        return out
+
+
+class ResB(nn.Module):
+    def __init__(self, embed_dim, red=1):
+        super().__init__()
+        self.body = nn.Sequential(
+            nn.Conv2d(embed_dim, embed_dim // red, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            nn.Conv2d(embed_dim // red, embed_dim, 3, 1, 1),
+        )
+
+    def forward(self, x):
+        return self.body(x) + x
+
+
+class SFB(nn.Module):
+    def __init__(self, embed_dim, red=1):
+        super().__init__()
+        self.spatial = ResB(embed_dim, red=red)
+        self.spectral = SpectralTransform(embed_dim)
+        self.fusion = nn.Conv2d(embed_dim * 2, embed_dim, 1, 1, 0)
+
+    def forward(self, x):
+        out = torch.cat([self.spatial(x), self.spectral(x)], dim=1)
+        return self.fusion(out)
+
+
+class ResidualSwinFourierBlock(nn.Module):
+    def __init__(
+        self,
+        dim,
+        depth,
+        num_heads,
+        window_size,
+        mlp_ratio,
+        qkv_bias,
+        drop,
+        attn_drop,
+        drop_path,
+        patch_norm=True,
+        resi_connection="SFB",
+    ):
+        super().__init__()
+        blocks = []
+        for i in range(depth):
+            shift = 0 if i % 2 == 0 else window_size // 2
+            blocks.append(
+                SwinTransformerBlock(
+                    dim=dim,
+                    num_heads=num_heads,
+                    window_size=window_size,
+                    shift_size=shift,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    drop=drop,
+                    attn_drop=attn_drop,
+                    drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+                )
+            )
+        self.blocks = nn.ModuleList(blocks)
+        norm_layer = nn.LayerNorm if patch_norm else None
+        self.patch_embed = PatchEmbed(dim, norm_layer=norm_layer)
+        self.patch_unembed = PatchUnEmbed(dim)
+
+        connection = str(resi_connection).lower()
+        if connection == "1conv":
+            self.conv = nn.Conv2d(dim, dim, 3, 1, 1)
+        elif connection == "hsfb":
+            self.conv = SFB(dim, red=2)
+        elif connection == "identity":
+            self.conv = nn.Identity()
+        else:
+            self.conv = SFB(dim)
+
+    def forward(self, x, h, w):
+        residual = x
+        for blk in self.blocks:
+            x = blk(x, h, w)
+        x = self.patch_unembed(x, h, w)
+        x = self.conv(x)
+        x = self.patch_embed(x)
+        return x + residual
+
+
 class AnimeSwinIR(nn.Module):
     def __init__(
         self,
@@ -589,19 +747,184 @@ class AnimeSwin2SR(nn.Module):
         return x
 
 
+class AnimeSwinFIR(nn.Module):
+    def __init__(
+        self,
+        scale=2,
+        in_channels=3,
+        embed_dim=96,
+        depths=(6, 6, 6, 6),
+        num_heads=(6, 6, 6, 6),
+        window_size=8,
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+        drop_path_rate=0.1,
+        patch_norm=True,
+        img_range=1.0,
+        upsampler="pixelshuffle",
+        resi_connection="SFB",
+    ):
+        super().__init__()
+        self.scale = scale
+        self.window_size = window_size
+        self.img_range = float(img_range)
+        self.upsampler = str(upsampler).lower()
+        if in_channels == 3:
+            self.register_buffer("mean", torch.tensor((0.3014, 0.3152, 0.3094)).view(1, 3, 1, 1), persistent=False)
+        else:
+            self.register_buffer("mean", torch.zeros(1, in_channels, 1, 1), persistent=False)
+
+        self.conv_first = nn.Conv2d(in_channels, embed_dim, 3, 1, 1)
+        norm_layer = nn.LayerNorm if bool(patch_norm) else None
+        self.patch_embed = PatchEmbed(embed_dim, norm_layer=norm_layer)
+        self.patch_unembed = PatchUnEmbed(embed_dim)
+        self.layers = nn.ModuleList()
+
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]
+        dpr_idx = 0
+        for i in range(len(depths)):
+            layer = ResidualSwinFourierBlock(
+                dim=embed_dim,
+                depth=depths[i],
+                num_heads=num_heads[i],
+                window_size=window_size,
+                mlp_ratio=mlp_ratio,
+                qkv_bias=qkv_bias,
+                drop=drop_rate,
+                attn_drop=attn_drop_rate,
+                drop_path=dpr[dpr_idx : dpr_idx + depths[i]],
+                patch_norm=bool(patch_norm),
+                resi_connection=resi_connection,
+            )
+            dpr_idx += depths[i]
+            self.layers.append(layer)
+
+        self.norm = nn.LayerNorm(embed_dim)
+        self.conv_after_body = nn.Conv2d(embed_dim, embed_dim, 3, 1, 1)
+
+        if self.upsampler == "pixelshuffle":
+            self.conv_before_upsample = nn.Sequential(
+                nn.Conv2d(embed_dim, 64, 3, 1, 1),
+                nn.LeakyReLU(negative_slope=0.2, inplace=True),
+            )
+            self.upsample = Upsample(scale, 64)
+            self.conv_last = nn.Conv2d(64, in_channels, 3, 1, 1)
+        else:
+            self.conv_before_upsample = None
+            self.upsample = None
+            self.conv_last = nn.Conv2d(embed_dim, in_channels, 3, 1, 1)
+
+    def forward_features(self, x):
+        b, _, h, w = x.shape
+        x = self.patch_embed(x)
+        for layer in self.layers:
+            x = layer(x, h, w)
+        x = self.norm(x)
+        return self.patch_unembed(x, h, w)
+
+    def forward(self, x):
+        mean = self.mean.type_as(x)
+        x = (x - mean) * self.img_range
+        x = self.conv_first(x)
+        x = self.conv_after_body(self.forward_features(x)) + x
+
+        if self.upsampler == "pixelshuffle":
+            x = self.conv_before_upsample(x)
+            x = self.upsample(x)
+            x = self.conv_last(x)
+        else:
+            x = self.conv_last(x)
+
+        return x / self.img_range + mean
+
+
+def _disc_conv(in_channels, out_channels, kernel_size=3, stride=1, padding=1, use_spectral_norm=True):
+    conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
+    return spectral_norm(conv) if use_spectral_norm else conv
+
+
+class UNetDiscriminator(nn.Module):
+    def __init__(self, in_channels=3, base_channels=64, use_spectral_norm=True, skip_connection=True):
+        super().__init__()
+        self.skip_connection = bool(skip_connection)
+        self.act = nn.LeakyReLU(negative_slope=0.2, inplace=True)
+
+        self.conv_in = _disc_conv(in_channels, base_channels, use_spectral_norm=use_spectral_norm)
+        self.down1 = _disc_conv(base_channels, base_channels * 2, 4, 2, 1, use_spectral_norm)
+        self.down2 = _disc_conv(base_channels * 2, base_channels * 4, 4, 2, 1, use_spectral_norm)
+        self.down3 = _disc_conv(base_channels * 4, base_channels * 8, 4, 2, 1, use_spectral_norm)
+
+        self.up1 = _disc_conv(base_channels * 8, base_channels * 4, use_spectral_norm=use_spectral_norm)
+        self.up2 = _disc_conv(base_channels * 4, base_channels * 2, use_spectral_norm=use_spectral_norm)
+        self.up3 = _disc_conv(base_channels * 2, base_channels, use_spectral_norm=use_spectral_norm)
+
+        self.conv_hr = _disc_conv(base_channels, base_channels, use_spectral_norm=use_spectral_norm)
+        self.conv_out = _disc_conv(base_channels, 1, use_spectral_norm=use_spectral_norm)
+
+    def forward(self, x):
+        x0 = self.act(self.conv_in(x))
+        x1 = self.act(self.down1(x0))
+        x2 = self.act(self.down2(x1))
+        x3 = self.act(self.down3(x2))
+
+        x = F.interpolate(x3, scale_factor=2, mode="bilinear", align_corners=False)
+        x = self.act(self.up1(x))
+        if self.skip_connection:
+            x = x + x2
+
+        x = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
+        x = self.act(self.up2(x))
+        if self.skip_connection:
+            x = x + x1
+
+        x = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
+        x = self.act(self.up3(x))
+        if self.skip_connection:
+            x = x + x0
+
+        x = self.act(self.conv_hr(x))
+        return self.conv_out(x)
+
+
 def build_model(cfg, scale):
     model_type = str(cfg.get("type", "swinir")).lower()
-    model_cls = AnimeSwin2SR if model_type == "swin2sr" else AnimeSwinIR
-    return model_cls(
-        scale=scale,
+    common_kwargs = {
+        "scale": scale,
+        "in_channels": int(cfg.get("in_channels", 3)),
+        "embed_dim": int(cfg.get("embed_dim", 96)),
+        "depths": tuple(cfg.get("depths", (6, 6, 6, 6))),
+        "num_heads": tuple(cfg.get("num_heads", (6, 6, 6, 6))),
+        "window_size": int(cfg.get("window_size", 8)),
+        "mlp_ratio": float(cfg.get("mlp_ratio", 4.0)),
+        "qkv_bias": bool(cfg.get("qkv_bias", True)),
+        "drop_rate": float(cfg.get("drop_rate", 0.0)),
+        "attn_drop_rate": float(cfg.get("attn_drop_rate", 0.0)),
+        "drop_path_rate": float(cfg.get("drop_path_rate", 0.1)),
+    }
+    if model_type == "swin2sr":
+        return AnimeSwin2SR(**common_kwargs)
+    if model_type == "swinfir":
+        return AnimeSwinFIR(
+            **common_kwargs,
+            patch_norm=bool(cfg.get("patch_norm", True)),
+            img_range=float(cfg.get("img_range", 1.0)),
+            upsampler=str(cfg.get("upsampler", "pixelshuffle")),
+            resi_connection=str(cfg.get("resi_connection", "SFB")),
+        )
+    return AnimeSwinIR(**common_kwargs)
+
+
+def build_discriminator(cfg):
+    if not isinstance(cfg, dict) or not bool(cfg.get("enabled", False)):
+        return None
+    disc_type = str(cfg.get("type", "unet")).lower()
+    if disc_type != "unet":
+        raise ValueError(f"Unsupported discriminator type: {disc_type}")
+    return UNetDiscriminator(
         in_channels=int(cfg.get("in_channels", 3)),
-        embed_dim=int(cfg.get("embed_dim", 96)),
-        depths=tuple(cfg.get("depths", (6, 6, 6, 6))),
-        num_heads=tuple(cfg.get("num_heads", (6, 6, 6, 6))),
-        window_size=int(cfg.get("window_size", 8)),
-        mlp_ratio=float(cfg.get("mlp_ratio", 4.0)),
-        qkv_bias=bool(cfg.get("qkv_bias", True)),
-        drop_rate=float(cfg.get("drop_rate", 0.0)),
-        attn_drop_rate=float(cfg.get("attn_drop_rate", 0.0)),
-        drop_path_rate=float(cfg.get("drop_path_rate", 0.1)),
+        base_channels=int(cfg.get("base_channels", 64)),
+        use_spectral_norm=bool(cfg.get("spectral_norm", True)),
+        skip_connection=bool(cfg.get("skip_connection", True)),
     )

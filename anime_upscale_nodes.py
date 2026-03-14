@@ -27,14 +27,17 @@ _CONFIG_DIR = os.path.join(os.path.dirname(__file__), "training_code")
 _CONFIG_V2_1_PATH = os.path.join(_CONFIG_DIR, "config.yaml")
 _CONFIG_V2_PATH = os.path.join(_CONFIG_DIR, "config.yaml")
 _CONFIG_V1_PATH = os.path.join(_CONFIG_DIR, "config_v1_old.yaml")
+_CONFIG_SWINFIR_PATH = os.path.join(_CONFIG_DIR, "config_SwinFIR_finetune.yaml")
 _WEIGHTS_BASE_URL = "https://huggingface.co/SnJake/Baikal-Swin-Anime/resolve/main"
 _REMOTE_WEIGHTS = {
+    "Baikal_SwinFIR_Anime_x2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_SwinFIR_Anime_x2.safetensors",
     "Baikal_Swin_Anime_x2_V2_2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2_V2_2.safetensors",
     "Baikal_Swin_Anime_x2_V2_1.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2_V2_1.safetensors",
     "Baikal_Swin_Anime_x2_V2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2_V2.safetensors",
     "Baikal_Swin_Anime_x2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2.safetensors",
 }
 _WEIGHTS_CONFIG_MAP = {
+    "Baikal_SwinFIR_Anime_x2.safetensors": _CONFIG_SWINFIR_PATH,
     "Baikal_Swin_Anime_x2_V2_2.safetensors": _CONFIG_V2_1_PATH,
     "Baikal_Swin_Anime_x2_V2_1.safetensors": _CONFIG_V2_1_PATH,
     "Baikal_Swin_Anime_x2_V2.safetensors": _CONFIG_V2_PATH,
@@ -151,10 +154,15 @@ def _resolve_weights_path(weights_name: str) -> str:
 def _resolve_config_path(weights_name: str) -> str:
     config_path = _WEIGHTS_CONFIG_MAP.get(weights_name)
     if config_path is None:
-        config_path = _CONFIG_V2_PATH if os.path.isfile(_CONFIG_V2_PATH) else _CONFIG_V1_PATH
+        if "swinfir" in str(weights_name).lower() and os.path.isfile(_CONFIG_SWINFIR_PATH):
+            config_path = _CONFIG_SWINFIR_PATH
+        else:
+            config_path = _CONFIG_V2_PATH if os.path.isfile(_CONFIG_V2_PATH) else _CONFIG_V1_PATH
 
     if not os.path.isfile(config_path):
-        available = [path for path in (_CONFIG_V2_PATH, _CONFIG_V1_PATH) if os.path.isfile(path)]
+        available = [
+            path for path in (_CONFIG_SWINFIR_PATH, _CONFIG_V2_PATH, _CONFIG_V1_PATH) if os.path.isfile(path)
+        ]
         if available:
             available_str = ", ".join([f"'{path}'" for path in available])
             raise FileNotFoundError(

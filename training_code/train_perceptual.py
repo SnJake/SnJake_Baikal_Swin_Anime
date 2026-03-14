@@ -133,10 +133,7 @@ def _resolve_compile_backend(compile_cfg):
     if backend != "inductor":
         return backend
     try:
-        from triton.compiler import compiler as triton_compiler
-
-        if not hasattr(triton_compiler, "triton_key"):
-            raise ImportError("triton_key is missing")
+        import triton  # noqa: F401
     except Exception as exc:
         if fallback:
             print(f"Inductor backend unavailable ({exc}); using {fallback}.")

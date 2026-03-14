@@ -1,0 +1,125 @@
+data:
+  train_dir: "E:/AnimeDataset/dataset"
+  scale: 2
+  hr_patch_size: 144
+  batch_size: 12
+  num_workers: 6
+  pin_memory: true
+  prefetch_factor: 2
+  extensions: ["png", "jpg", "jpeg", "webp"]
+  augment: true
+  degrade:
+    blur_prob: 0.25
+    blur_radius: 1.2
+    resize_prob: 0.6
+    resize_range: [0.6, 1.2]
+    noise_prob: 0.25
+    noise_sigma: 2.0
+    noise_gray_prob: 0.3
+    jpeg_prob: 0.2
+    jpeg2_prob: 0.1
+    jpeg_quality_min: 70
+    jpeg_quality_max: 95
+    jpeg_subsampling_choices: [0, 1, 2]
+    resample_methods: ["lanczos", "bicubic", "bilinear"]
+
+model:
+  type: "swinfir"
+  in_channels: 3
+  embed_dim: 96
+  depths: [6, 6, 6, 6]
+  num_heads: [6, 6, 6, 6]
+  window_size: 8
+  mlp_ratio: 4.0
+  qkv_bias: true
+  drop_rate: 0.0
+  attn_drop_rate: 0.0
+  drop_path_rate: 0.1
+  patch_norm: true
+  img_range: 1.0
+  upsampler: "pixelshuffle"
+  resi_connection: "SFB"
+
+loss:
+  pixel_type: charbonnier
+  charbonnier_eps: 1.0e-3
+  pixel_weight: 1.0
+  edge_weight: 0.0
+  fft_weight: 0.0
+  perceptual_weight: 0.0
+  perceptual_type: "none"
+
+loss_schedule:
+  enabled: false
+
+gan:
+  enabled: false
+
+discriminator:
+  enabled: false
+
+optimizer:
+  lr: 2.0e-4
+  weight_decay: 1.0e-4
+  betas: [0.9, 0.99]
+  eps: 1.0e-8
+
+scheduler:
+  name: cosine
+  warmup_steps: 1000
+  min_lr: 2.0e-6
+
+ema:
+  enabled: true
+  decay: 0.999
+
+train:
+  epochs: 50
+  seed: 4
+  amp: bf16
+  compile:
+    enabled: false
+    backend: "inductor"
+    mode: "default"
+    fullgraph: false
+    dynamic: false
+  grad_clip_norm: 1.0
+  grad_accum_steps: 1
+  perf_timing: true
+  perf_ema_decay: 0.9
+  log_every: 250
+  save_every_epochs: 1
+  output_dir: "runs/swinfir_stage1"
+  resume: "G:/Programs/UpscalerAnime/runs/swinfir_stage1/ckpt_epoch_0012.pt"
+
+val:
+  val_dir: "E:/AnimeDataset/LowRes"
+  batch_size: 1
+  num_workers: 2
+  every_epochs: 2
+  max_images: 600
+  tile: 256
+  overlap: 32
+  use_dists: false
+  dists_device: "cuda"
+  recreate_dists_each_val: true
+  empty_cache_after: true
+  gc_collect: true
+  pin_memory: false
+  persistent_workers: false
+  hr_patch_size: 0
+  crop_to_scale: true
+  degrade:
+    blur_prob: 0.0
+    blur_radius: 0.0
+    resize_prob: 0.0
+    resize_range: [1.0, 1.0]
+    noise_prob: 0.0
+    noise_sigma: 0.0
+    noise_gray_prob: 0.0
+    jpeg_prob: 0.0
+    jpeg2_prob: 0.0
+    jpeg_quality_min: 95
+    jpeg_quality_max: 95
+    jpeg_subsampling_choices: [0]
+    resample_methods: ["bicubic"]
