@@ -112,9 +112,10 @@
         }
       ],
       "properties": {
-        "aux_id": "SnJake/SnJake_Baikal_Swin_Anime",
+        "cnr_id": "snjake_baikal_swin_anime",
         "ver": "4f5fc4292e1da9890dcc3bfed72f4cbd4103b1a6",
         "Node name for S&R": "SnJakeAnimeUpscaleCheckpointLoader",
+        "aux_id": "SnJake/SnJake_Baikal_Swin_Anime",
         "ue_properties": {
           "widget_ue_connectable": {},
           "input_ue_unconnectable": {},
@@ -122,7 +123,7 @@
         }
       },
       "widgets_values": [
-        "Baikal_Swin_Anime_x2_V2_2.safetensors",
+        "Baikal_SwinFIR_Anime_x2.safetensors",
         false
       ],
       "color": "#2e2e36",
@@ -164,9 +165,10 @@
         }
       ],
       "properties": {
-        "aux_id": "SnJake/SnJake_Baikal_Swin_Anime",
+        "cnr_id": "snjake_baikal_swin_anime",
         "ver": "4f5fc4292e1da9890dcc3bfed72f4cbd4103b1a6",
         "Node name for S&R": "SnJakeAnimeUpscaleInference",
+        "aux_id": "SnJake/SnJake_Baikal_Swin_Anime",
         "ue_properties": {
           "widget_ue_connectable": {},
           "input_ue_unconnectable": {},
@@ -177,7 +179,7 @@
         512,
         64,
         "auto",
-        "auto"
+        "cuda"
       ],
       "color": "#2e2e36",
       "bgcolor": "#41414a"
@@ -216,13 +218,13 @@
     "ue_links": [],
     "links_added_by_ue": [],
     "ds": {
-      "scale": 1.7985878990921598,
+      "scale": 1.6350799082656005,
       "offset": [
-        -95.2568440932018,
-        1372.2563397440326
+        -152.3132604361551,
+        1361.282486306031
       ]
     },
-    "frontendVersion": "1.35.9",
+    "frontendVersion": "1.39.19",
     "VHS_latentpreview": false,
     "VHS_latentpreviewrate": 0,
     "VHS_MetadataImage": true,
