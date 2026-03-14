@@ -102,6 +102,11 @@ V2.1:
 V2.2:
 - Epochs: 40 (For now)
 
+V3 (SwinFIR):
+- Epochs: Stage 1 - 20; Stage 2 - 18
+- Perceptual backbone: convnextv2_base.fcmae_ft_in22k_in1k, fine‑tuned on anime to improve feature sensitivity.
+- Dataset: ~50,000 images from Danbooru2024: https://huggingface.co/datasets/deepghs/danbooru2024
+
 Training code is included in `training_code/` for reference.
 
 ---
