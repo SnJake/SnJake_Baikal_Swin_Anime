@@ -40,7 +40,7 @@ _REMOTE_WEIGHTS = {
 }
 _WEIGHTS_CONFIG_MAP = {
     "Baikal_SwinFIR_Anime_x2.safetensors": _CONFIG_SWINFIR_PATH,
-    "Baikal_SwinFIR_Anime_x2_v31.safetensors": CONFIG_SWINFIRV31_PATH,
+    "Baikal_SwinFIR_Anime_x2_v31.safetensors": _CONFIG_SWINFIRV31_PATH,
     "Baikal_Swin_Anime_x2_V2_2.safetensors": _CONFIG_V2_1_PATH,
     "Baikal_Swin_Anime_x2_V2_1.safetensors": _CONFIG_V2_1_PATH,
     "Baikal_Swin_Anime_x2_V2.safetensors": _CONFIG_V2_PATH,
