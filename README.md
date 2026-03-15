@@ -92,7 +92,7 @@ V2:
 - Slightly sharper output, no edge noise artifacts.
 - Epochs: 20
 - Dataset: 49,606 images from Danbooru2024: https://huggingface.co/datasets/deepghs/danbooru2024
-- Perceptual backbone: convnextv2_tiny.fcmae_ft_in22k_in1k, fine‑tuned on anime to improve feature sensitivity.
+- Perceptual backbone: Custom SimSiam pre-trained convnextv2_tiny (Experimental)
 - Loss schedule: gradual ramp‑in of perceptual/auxiliary losses for stable training.
 
 V2.1:
@@ -104,8 +104,13 @@ V2.2:
 
 V3 (SwinFIR):
 - Epochs: Stage 1 - 20; Stage 2 - 18
-- Perceptual backbone: convnextv2_base.fcmae_ft_in22k_in1k, fine‑tuned on anime to improve feature sensitivity.
+- Perceptual backbone: Custom SimSiam pre-trained convnextv2_base (Experimental).
 - Dataset: ~50,000 images from Danbooru2024: https://huggingface.co/datasets/deepghs/danbooru2024
+
+V3.1 (Current Best - SwinFIR): 🏆
+- Epochs: Stage 1 (Charbonnier) - 20; Stage 2 (GAN Fine-tuning) - 16.
+- Perceptual backbone: Reverted to the robust ImageNet-pretrained convnextv2_base.fcmae_ft_in22k_in1k for superior high-frequency feature extraction.
+- Dataset: ~50,000 images from [Danbooru2024](https://huggingface.co/datasets/deepghs/danbooru2024)
 
 Training code is included in `training_code/` for reference.
 
