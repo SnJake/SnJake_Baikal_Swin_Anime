@@ -28,9 +28,11 @@ _CONFIG_V2_1_PATH = os.path.join(_CONFIG_DIR, "config.yaml")
 _CONFIG_V2_PATH = os.path.join(_CONFIG_DIR, "config.yaml")
 _CONFIG_V1_PATH = os.path.join(_CONFIG_DIR, "config_v1_old.yaml")
 _CONFIG_SWINFIR_PATH = os.path.join(_CONFIG_DIR, "config_SwinFIR_finetune.yaml")
+_CONFIG_SWINFIR_PATH = os.path.join(_CONFIG_DIR, "config_SwinFIR_finetune_v31.yaml")
 _WEIGHTS_BASE_URL = "https://huggingface.co/SnJake/Baikal-Swin-Anime/resolve/main"
 _REMOTE_WEIGHTS = {
     "Baikal_SwinFIR_Anime_x2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_SwinFIR_Anime_x2.safetensors",
+    "Baikal_SwinFIR_Anime_x2_v31.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_SwinFIR_Anime_x2_v31.safetensors",
     "Baikal_Swin_Anime_x2_V2_2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2_V2_2.safetensors",
     "Baikal_Swin_Anime_x2_V2_1.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2_V2_1.safetensors",
     "Baikal_Swin_Anime_x2_V2.safetensors": f"{_WEIGHTS_BASE_URL}/Baikal_Swin_Anime_x2_V2.safetensors",
@@ -38,6 +40,7 @@ _REMOTE_WEIGHTS = {
 }
 _WEIGHTS_CONFIG_MAP = {
     "Baikal_SwinFIR_Anime_x2.safetensors": _CONFIG_SWINFIR_PATH,
+    "Baikal_SwinFIR_Anime_x2_v31.safetensors": _CONFIG_SWINFIR_PATH,
     "Baikal_Swin_Anime_x2_V2_2.safetensors": _CONFIG_V2_1_PATH,
     "Baikal_Swin_Anime_x2_V2_1.safetensors": _CONFIG_V2_1_PATH,
     "Baikal_Swin_Anime_x2_V2.safetensors": _CONFIG_V2_PATH,
