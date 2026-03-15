@@ -123,7 +123,7 @@
         }
       },
       "widgets_values": [
-        "Baikal_SwinFIR_Anime_x2.safetensors",
+        "Baikal_SwinFIR_Anime_x2_v31.safetensors",
         false
       ],
       "color": "#2e2e36",
