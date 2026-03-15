@@ -105,7 +105,7 @@ V2.2:
 V3 (SwinFIR):
 - Epochs: Stage 1 - 20; Stage 2 - 18
 - Perceptual backbone: Custom SimSiam pre-trained convnextv2_base (Experimental).
-- Dataset: ~50,000 images from Danbooru2024: https://huggingface.co/datasets/deepghs/danbooru2024
+- Dataset: ~50,000 images from [Danbooru2024](https://huggingface.co/datasets/deepghs/danbooru2024)
 
 V3.1 (Current Best - SwinFIR): 🏆
 - Epochs: Stage 1 (Charbonnier) - 20; Stage 2 (GAN Fine-tuning) - 16.
